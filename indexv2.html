@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SharkPDF - Unificador y Editor Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sortablejs/1.15.0/Sortable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        :root {
+            --shark-blue: #0284c7;
+            --shark-dark: #0f172a;
+        }
+
+        body {
+            background-color: var(--shark-dark);
+        }
+
+        .page-card {
+            transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+        }
+
+        .page-card:hover {
+            box-shadow: 0 10px 25px -5px rgba(2, 132, 199, 0.4);
+            border-color: var(--shark-blue);
+        }
+
+        .drag-ghost {
+            opacity: 0.3;
+            background: #1e293b;
+            border: 2px dashed #0ea5e9;
+            transform: scale(0.95);
+        }
+
+        #drop-zone.dragover {
+            background-color: rgba(2, 132, 199, 0.15);
+            border-color: #38bdf8;
+            transform: scale(1.02);
+        }
+
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.95);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            backdrop-filter: blur(4px);
+        }
+
+        .preview-img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+            background: white;
+            /* Base blanca para PDFs transparentes */
+        }
+
+        .drag-handle {
+            cursor: grab;
+        }
+
+        .drag-handle:active {
+            cursor: grabbing;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen font-sans text-slate-200">
+
+    <!-- Loading Overlay -->
+    <div id="loading" class="loading-overlay">
+        <div
+            class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-sky-400 mb-6 shadow-[0_0_20px_rgba(56,189,248,0.5)]">
+        </div>
+        <p id="loading-text" class="text-2xl font-bold text-sky-300 tracking-wide animate-pulse">Procesando
+            documentos...</p>
+    </div>
+
+    <!-- Navegación Principal -->
+    <nav
+        class="bg-slate-900 shadow-xl border-b border-slate-800 px-6 py-4 flex justify-between items-center sticky top-0 z-40">
+        <div class="flex items-center gap-3">
+            <!-- Shark Icon -->
+            <svg class="w-10 h-10 text-sky-500 drop-shadow-[0_0_8px_rgba(2,132,199,0.6)]" viewBox="0 0 24 24"
+                fill="currentColor">
+                <path
+                    d="M12 2C12 2 15 9.5 20 14C21.5 15.35 22 17 22 17C22 17 16.5 16 12 22C7.5 16 2 17 2 17C2 17 2.5 15.35 4 14C9 9.5 12 2 12 2Z" />
+            </svg>
+            <div>
+                <h1 class="text-2xl font-black text-white tracking-tight">Shark<span class="text-sky-500">PDF</span>
+                </h1>
+                <p class="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Studio de Edición</p>
+            </div>
+        </div>
+        <div class="flex flex-wrap gap-3 items-center">
+            <button onclick="clearAll()"
+                class="px-4 py-2 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition font-medium flex items-center gap-2"
+                title="Eliminar todo">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                    </path>
+                </svg>
+                <span class="hidden md:inline">Limpiar Todo</span>
+            </button>
+            <div class="w-px h-6 bg-slate-700 hidden sm:block"></div>
+
+            <button onclick="printPDF()"
+                class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-lg font-medium shadow transition flex items-center gap-2 border border-slate-700">
+                <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z">
+                    </path>
+                </svg>
+                <span class="hidden sm:inline">Imprimir</span>
+            </button>
+
+            <button onclick="previewPDF()"
+                class="bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/50 text-indigo-300 px-4 py-2 rounded-lg font-medium shadow transition flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z">
+                    </path>
+                </svg>
+                <span class="hidden sm:inline">Previsualizar</span>
+            </button>
+
+            <button onclick="openExportModal()"
+                class="bg-sky-600 hover:bg-sky-500 text-white px-6 py-2 rounded-lg font-bold shadow-[0_0_15px_rgba(2,132,199,0.5)] hover:shadow-[0_0_20px_rgba(56,189,248,0.7)] transition flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                </svg>
+                Exportar Final
+            </button>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto p-6">
+
+        <!-- Drop Zone Principal -->
+        <div id="drop-zone"
+            class="border-2 border-dashed border-slate-600 hover:border-sky-400 rounded-2xl p-10 text-center bg-slate-800/40 cursor-pointer transition-all duration-300 mb-8 group relative overflow-hidden">
+            <div
+                class="absolute inset-0 bg-gradient-to-b from-transparent to-sky-900/10 opacity-0 group-hover:opacity-100 transition duration-500">
+            </div>
+            <input type="file" id="file-input" multiple accept=".pdf, image/jpeg, image/png, image/webp" class="hidden">
+            <div class="flex flex-col items-center relative z-10">
+                <div
+                    class="w-20 h-20 rounded-full bg-slate-700/50 border border-slate-600 flex items-center justify-center mb-4 group-hover:scale-110 group-hover:bg-sky-500/20 group-hover:border-sky-400/50 transition duration-300">
+                    <svg class="w-10 h-10 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                    </svg>
+                </div>
+                <p class="text-2xl font-bold text-white tracking-wide">Añadir Archivos al Proyecto</p>
+                <p class="text-slate-400 mt-2 text-sm max-w-md mx-auto">Arrastra tus archivos PDF o imágenes aquí, o haz
+                    clic para buscarlos. Podrás editar, reordenar y eliminar páginas una vez subidos.</p>
+            </div>
+        </div>
+
+        <!-- Panel de Herramientas (Solo visible con archivos) -->
+        <div id="toolbar"
+            class="hidden flex flex-col md:flex-row justify-between md:items-center gap-4 mb-6 bg-slate-800/80 backdrop-blur border border-slate-700 p-4 rounded-xl shadow-md">
+            <div class="flex items-center gap-4">
+                <span class="text-sm font-bold text-sky-400 uppercase tracking-wider flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                        </path>
+                    </svg>
+                    Páginas Totales: <span id="page-count-badge"
+                        class="bg-sky-500/20 text-sky-300 py-0.5 px-2 rounded-md">0</span>
+                </span>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <button onclick="rotateAll(90)"
+                    class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2"
+                    title="Girar todas las páginas a la derecha">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                        </path>
+                    </svg>
+                    Rotar Todo
+                </button>
+                <button onclick="reversePages()"
+                    class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2"
+                    title="Invertir el orden de todas las páginas">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                    </svg>
+                    Invertir Orden
+                </button>
+            </div>
+        </div>
+
+        <!-- Grid de Páginas -->
+        <div id="pages-container" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+            <!-- Las tarjetas de páginas se generan por JS -->
+        </div>
+
+        <!-- Estado Vacío -->
+        <div id="empty-state" class="text-center py-20">
+            <div class="opacity-10 mb-6 flex justify-center">
+                <svg class="w-40 h-40 text-sky-500" viewBox="0 0 24 24" fill="currentColor">
+                    <path
+                        d="M12 2C12 2 15 9.5 20 14C21.5 15.35 22 17 22 17C22 17 16.5 16 12 22C7.5 16 2 17 2 17C2 17 2.5 15.35 4 14C9 9.5 12 2 12 2Z" />
+                </svg>
+            </div>
+            <p class="text-slate-500 text-2xl font-medium">El proyecto está vacío</p>
+            <p class="text-slate-600 mt-2 text-lg">Sube PDFs para empezar a combinarlos y editarlos.</p>
+        </div>
+    </main>
+
+    <!-- Modal para Recortar -->
+    <div id="crop-modal"
+        class="hidden fixed inset-0 bg-slate-900/95 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+        <div
+            class="bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-700 shadow-2xl transform transition-all">
+            <div class="flex items-center gap-3 mb-6 border-b border-slate-700 pb-4">
+                <div class="p-2 bg-sky-500/20 rounded-lg text-sky-400">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 11-4.243 4.243 3 3 0 014.243-4.243zm0-5.758a3 3 0 11-4.243-4.243 3 3 0 014.243 4.243z">
+                        </path>
+                    </svg>
+                </div>
+                <h3 class="text-xl font-bold text-white">Recortar Márgenes</h3>
+            </div>
+            <p class="text-sm text-slate-400 mb-6">Define los puntos a recortar de cada lado de esta página para ajustar
+                el contenido.</p>
+
+            <div class="grid grid-cols-2 gap-5 mb-8">
+                <div class="space-y-1"><label
+                        class="text-xs font-bold text-sky-400 tracking-wider">SUPERIOR</label><input type="number"
+                        id="crop-top" value="0" min="0"
+                        class="w-full bg-slate-900 border border-slate-600 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none p-3 rounded-lg text-white font-mono text-center transition">
+                </div>
+                <div class="space-y-1"><label
+                        class="text-xs font-bold text-sky-400 tracking-wider">INFERIOR</label><input type="number"
+                        id="crop-bottom" value="0" min="0"
+                        class="w-full bg-slate-900 border border-slate-600 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none p-3 rounded-lg text-white font-mono text-center transition">
+                </div>
+                <div class="space-y-1"><label
+                        class="text-xs font-bold text-sky-400 tracking-wider">IZQUIERDA</label><input type="number"
+                        id="crop-left" value="0" min="0"
+                        class="w-full bg-slate-900 border border-slate-600 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none p-3 rounded-lg text-white font-mono text-center transition">
+                </div>
+                <div class="space-y-1"><label
+                        class="text-xs font-bold text-sky-400 tracking-wider">DERECHA</label><input type="number"
+                        id="crop-right" value="0" min="0"
+                        class="w-full bg-slate-900 border border-slate-600 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none p-3 rounded-lg text-white font-mono text-center transition">
+                </div>
+            </div>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeCrop()"
+                    class="px-5 py-2.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition font-medium">Cancelar</button>
+                <button onclick="applyCrop()"
+                    class="px-5 py-2.5 bg-sky-600 text-white rounded-lg font-bold hover:bg-sky-500 shadow-lg shadow-sky-600/30 transition">Aplicar
+                    Recorte</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Exportar -->
+    <div id="export-modal"
+        class="hidden fixed inset-0 bg-slate-900/95 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+        <div
+            class="bg-slate-800 rounded-3xl max-w-lg w-full p-8 border border-slate-700 shadow-2xl relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-sky-400 to-indigo-500"></div>
+            <h3 class="text-3xl font-black text-white mb-2 mt-2">Exportar Proyecto</h3>
+            <p class="text-slate-400 mb-8 text-lg">Elige el formato de salida para tus documentos.</p>
+
+            <div class="grid gap-4">
+                <button onclick="exportAsPDF()"
+                    class="group flex items-start gap-5 p-5 rounded-2xl border border-slate-700 bg-slate-800/50 hover:bg-slate-700 hover:border-red-500/50 transition text-left">
+                    <div
+                        class="p-4 bg-red-500/20 text-red-500 rounded-xl group-hover:scale-110 transition shadow-inner">
+                        <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+                            <path
+                                d="M11.363 2c4.155 0 2.637 6 2.637 6s6-1.518 6 2.637c0 4.155-15.424 10.518-17.5 8.442-2.076-2.076 4.708-17.079 8.863-17.079zm3.137 11.137l-1.5-1.5-4.5 4.5 1.5 1.5 4.5-4.5z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h4 class="text-white font-bold text-xl group-hover:text-red-400 transition">Documento PDF Final
+                        </h4>
+                        <p class="text-sm text-slate-400 mt-1">Une todas las páginas ordenadas en un único archivo PDF
+                            optimizado.</p>
+                    </div>
+                </button>
+
+                <button onclick="exportAsImages()"
+                    class="group flex items-start gap-5 p-5 rounded-2xl border border-slate-700 bg-slate-800/50 hover:bg-slate-700 hover:border-indigo-500/50 transition text-left">
+                    <div
+                        class="p-4 bg-indigo-500/20 text-indigo-400 rounded-xl group-hover:scale-110 transition shadow-inner">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z">
+                            </path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h4 class="text-white font-bold text-xl group-hover:text-indigo-400 transition">Imágenes
+                            (Archivo ZIP)</h4>
+                        <p class="text-sm text-slate-400 mt-1">Extrae cada página y expórtalas comprimidas en un archivo
+                            ZIP (Formato JPG).</p>
+                    </div>
+                </button>
+            </div>
+
+            <div class="mt-8 flex justify-end">
+                <button onclick="closeExportModal()"
+                    class="px-6 py-3 text-slate-400 hover:text-white bg-slate-900 rounded-xl transition font-medium">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Previsualización (Iframe) -->
+    <div id="preview-modal" class="hidden fixed inset-0 bg-slate-950/95 z-[200] flex flex-col backdrop-blur-md">
+        <div class="flex justify-between items-center p-4 bg-slate-900 border-b border-slate-800">
+            <div class="flex items-center gap-3">
+                <svg class="w-6 h-6 text-sky-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z">
+                    </path>
+                </svg>
+                <h3 class="text-xl font-bold text-white tracking-wide">Previsualización del Proyecto Final</h3>
+            </div>
+            <button onclick="closePreview()"
+                class="text-slate-300 hover:text-red-400 hover:bg-red-500/10 p-2 px-4 rounded-lg transition flex items-center gap-2 border border-slate-700 hover:border-red-500/30">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                    </path>
+                </svg>
+                <span class="font-bold">Cerrar Previsualización</span>
+            </button>
+        </div>
+        <div class="flex-grow w-full bg-slate-800 relative flex justify-center items-center">
+            <!-- Embebido nativo de PDF -->
+            <embed id="preview-iframe" class="w-full h-full border-none shadow-2xl" type="application/pdf">
+        </div>
+    </div>
+
+    <script>
+        // Configuración de PDF.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+        const { PDFDocument, degrees } = PDFLib;
+
+        // --- ESTADO DE LA APLICACIÓN ---
+        // Almacenamos los archivos crudos usando Uint8Array para evitar que se pierdan o bloqueen en memoria
+        const filesDB = {}; // fileId -> { data: Uint8Array, name: string, type: string }
+        let pagesData = []; // [{ id, fileId, pageIndex, rotation, crop, previewUrl }]
+        let currentCropIndex = null;
+
+        // Referencias del DOM
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const pagesContainer = document.getElementById('pages-container');
+        const loading = document.getElementById('loading');
+        const loadingText = document.getElementById('loading-text');
+
+        // Funciones de UI
+        function showLoading(text) {
+            loadingText.innerText = text || "Procesando...";
+            loading.style.display = 'flex';
+        }
+        function hideLoading() { loading.style.display = 'none'; }
+
+        // Inicializar Drag & Drop
+        function initSortable() {
+            if (typeof Sortable !== 'undefined') {
+                new Sortable(pagesContainer, {
+                    animation: 250,
+                    ghostClass: 'drag-ghost',
+                    handle: '.drag-handle', // Solo arrastrable desde el header superior de la tarjeta
+                    onEnd: () => {
+                        const newOrder = Array.from(pagesContainer.querySelectorAll('[data-id]'))
+                            .map(el => el.getAttribute('data-id'));
+                        pagesData = newOrder.map(id => pagesData.find(p => p.id === id));
+                        updatePageCount();
+                    }
+                });
+            } else {
+                setTimeout(initSortable, 100);
+            }
+        }
+        window.onload = initSortable;
+
+        // Manejadores de subida de archivos
+        dropZone.onclick = () => fileInput.click();
+        fileInput.onchange = (e) => handleFiles(e.target.files);
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
+        dropZone.ondragleave = () => dropZone.classList.remove('dragover');
+        dropZone.ondrop = (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        };
+
+        // Generador de Miniaturas para PDFs
+        async function getPdfPreview(uint8Array, pageNum) {
+            // Pasamos un slice() para asegurarnos de que el worker de pdf.js no modifique el buffer original
+            const loadingTask = pdfjsLib.getDocument({ data: uint8Array.slice(0) });
+            const pdf = await loadingTask.promise;
+            const page = await pdf.getPage(pageNum + 1);
+            const viewport = page.getViewport({ scale: 0.6 });
+
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+            return canvas.toDataURL('image/jpeg', 0.85);
+        }
+
+        // Procesar archivos subidos
+        async function handleFiles(files) {
+            if (files.length === 0) return;
+            showLoading("Analizando documentos...");
+
+            for (const file of files) {
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    // IMPORTANTE: Guardamos una copia inmutable Uint8Array en nuestra BD interna
+                    const fileData = new Uint8Array(arrayBuffer);
+                    const fileId = crypto.randomUUID();
+
+                    filesDB[fileId] = {
+                        data: fileData,
+                        name: file.name,
+                        type: file.type
+                    };
+
+                    if (file.type === 'application/pdf') {
+                        // Usamos slice() para no bloquear la data
+                        const pdfDoc = await PDFDocument.load(fileData.slice(0));
+                        const count = pdfDoc.getPageCount();
+
+                        for (let i = 0; i < count; i++) {
+                            const preview = await getPdfPreview(fileData, i);
+                            pagesData.push({
+                                id: crypto.randomUUID(),
+                                fileId: fileId,
+                                pageIndex: i,
+                                isImage: false,
+                                rotation: 0,
+                                previewUrl: preview,
+                                crop: { t: 0, b: 0, l: 0, r: 0 }
+                            });
+                        }
+                    } else if (file.type.startsWith('image/')) {
+                        const preview = await new Promise((resolve) => {
+                            const reader = new FileReader();
+                            reader.onload = (e) => resolve(e.target.result);
+                            reader.readAsDataURL(file);
+                        });
+
+                        pagesData.push({
+                            id: crypto.randomUUID(),
+                            fileId: fileId,
+                            pageIndex: 0,
+                            isImage: true,
+                            rotation: 0,
+                            previewUrl: preview,
+                            crop: { t: 0, b: 0, l: 0, r: 0 }
+                        });
+                    }
+                } catch (err) {
+                    console.error("Error cargando el archivo: " + file.name, err);
+                    alert("No se pudo cargar: " + file.name);
+                }
+            }
+
+            renderPages();
+            hideLoading();
+            fileInput.value = ''; // Resetear el input
+        }
+
+        function updatePageCount() {
+            document.getElementById('page-count-badge').innerText = pagesData.length;
+        }
+
+        // Renderizar el editor
+        function renderPages() {
+            pagesContainer.innerHTML = '';
+            const emptyState = document.getElementById('empty-state');
+            const toolbar = document.getElementById('toolbar');
+
+            if (pagesData.length === 0) {
+                emptyState.classList.remove('hidden');
+                toolbar.classList.add('hidden');
+                updatePageCount();
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+            toolbar.classList.remove('hidden');
+            updatePageCount();
+
+            pagesData.forEach((page, index) => {
+                const fileInfo = filesDB[page.fileId];
+                const isFirstPage = index === 0;
+                const isLastPage = index === pagesData.length - 1;
+
+                const card = document.createElement('div');
+                card.className = 'page-card flex flex-col bg-slate-800 border border-slate-700 rounded-xl overflow-hidden group shadow-lg';
+                card.setAttribute('data-id', page.id);
+
+                card.innerHTML = `
+                    <!-- Cabecera de la Tarjeta (Drag handle y Título) -->
+                    <div class="drag-handle bg-slate-900 px-3 py-2 flex justify-between items-center border-b border-slate-700 group-hover:bg-slate-800 transition" title="Arrastra para reordenar">
+                        <div class="flex items-center gap-2 overflow-hidden">
+                            <svg class="w-4 h-4 text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path></svg>
+                            <span class="text-xs font-semibold text-slate-300 truncate" title="${fileInfo.name}">${fileInfo.name}</span>
+                        </div>
+                        <span class="text-[10px] font-bold bg-sky-900/50 text-sky-400 px-2 py-0.5 rounded ml-2 flex-shrink-0">Pag ${page.pageIndex + 1}</span>
+                    </div>
+
+                    <!-- Vista previa y Overlays -->
+                    <div class="aspect-[3/4] bg-slate-900 flex items-center justify-center p-3 relative overflow-hidden flex-grow">
+                        <!-- Número de orden global -->
+                        <div class="absolute top-2 left-2 bg-sky-500 text-white text-xs px-2.5 py-1 rounded-md font-black z-10 shadow-lg shadow-sky-500/30">
+                            # ${index + 1}
+                        </div>
+                        
+                        <img src="${page.previewUrl}" class="preview-img transition-transform duration-300" 
+                             style="transform: rotate(${page.rotation}deg)">
+                        
+                        <!-- Botones Overlay -->
+                        <div class="absolute inset-0 bg-slate-900/70 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2 backdrop-blur-[2px]">
+                            <button onclick="rotatePage('${page.id}')" title="Girar 90°" class="p-2.5 bg-slate-700 hover:bg-sky-500 rounded-full text-white transition shadow-lg">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            </button>
+                            <button onclick="openCrop('${page.id}')" title="Recortar" class="p-2.5 bg-slate-700 hover:bg-sky-500 rounded-full text-white transition shadow-lg relative">
+                                ${(page.crop.t || page.crop.b || page.crop.l || page.crop.r) ? `<span class="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-500 border-2 border-slate-900"></span>` : ''}
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 11-4.243 4.243 3 3 0 014.243-4.243zm0-5.758a3 3 0 11-4.243-4.243 3 3 0 014.243 4.243z"></path></svg>
+                            </button>
+                            <button onclick="duplicatePage('${page.id}')" title="Duplicar Página" class="p-2.5 bg-slate-700 hover:bg-emerald-500 rounded-full text-white transition shadow-lg">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+                            </button>
+                            <button onclick="removePage('${page.id}')" title="Eliminar" class="p-2.5 bg-red-500/80 hover:bg-red-500 rounded-full text-white transition shadow-lg">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Pie de Tarjeta (Controles de movimiento explícitos) -->
+                    <div class="px-2 py-2 bg-slate-800 border-t border-slate-700 flex justify-between">
+                        <button onclick="movePage('${page.id}', -1)" ${isFirstPage ? 'disabled class="p-1 text-slate-600"' : 'title="Mover atrás" class="p-1 text-slate-400 hover:text-sky-400 hover:bg-slate-700 rounded transition"'}>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                        </button>
+                        <button onclick="movePage('${page.id}', 1)" ${isLastPage ? 'disabled class="p-1 text-slate-600"' : 'title="Mover adelante" class="p-1 text-slate-400 hover:text-sky-400 hover:bg-slate-700 rounded transition"'}>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                        </button>
+                    </div>
+                `;
+                pagesContainer.appendChild(card);
+            });
+        }
+
+        // --- FUNCIONES DE EDICIÓN ---
+        function removePage(id) {
+            pagesData = pagesData.filter(p => p.id !== id);
+            renderPages();
+        }
+
+        function rotatePage(id) {
+            const page = pagesData.find(p => p.id === id);
+            page.rotation = (page.rotation + 90) % 360;
+            renderPages();
+        }
+
+        function rotateAll(deg) {
+            pagesData.forEach(p => p.rotation = (p.rotation + deg) % 360);
+            renderPages();
+        }
+
+        function reversePages() {
+            pagesData.reverse();
+            renderPages();
+        }
+
+        function movePage(id, direction) {
+            const index = pagesData.findIndex(p => p.id === id);
+            if (index < 0) return;
+            const newIndex = index + direction;
+            if (newIndex < 0 || newIndex >= pagesData.length) return;
+
+            // Swap elements
+            const temp = pagesData[index];
+            pagesData[index] = pagesData[newIndex];
+            pagesData[newIndex] = temp;
+
+            renderPages();
+        }
+
+        function duplicatePage(id) {
+            const index = pagesData.findIndex(p => p.id === id);
+            if (index < 0) return;
+            const target = pagesData[index];
+
+            // Crear copia profunda
+            const clone = JSON.parse(JSON.stringify(target));
+            clone.id = crypto.randomUUID(); // Nuevo ID único para el DOM
+
+            // Insertar justo después
+            pagesData.splice(index + 1, 0, clone);
+            renderPages();
+        }
+
+        function clearAll() {
+            if (pagesData.length > 0 && confirm("¿Seguro que quieres borrar todo el proyecto y vaciar el studio?")) {
+                pagesData = [];
+                // También limpiamos el diccionario de archivos en memoria
+                for (let key in filesDB) delete filesDB[key];
+                renderPages();
+            }
+        }
+
+        // --- FUNCIONES DE RECORTE ---
+        function openCrop(id) {
+            currentCropIndex = pagesData.findIndex(p => p.id === id);
+            const p = pagesData[currentCropIndex];
+            document.getElementById('crop-top').value = p.crop.t;
+            document.getElementById('crop-bottom').value = p.crop.b;
+            document.getElementById('crop-left').value = p.crop.l;
+            document.getElementById('crop-right').value = p.crop.r;
+            document.getElementById('crop-modal').classList.remove('hidden');
+        }
+
+        function closeCrop() {
+            document.getElementById('crop-modal').classList.add('hidden');
+            currentCropIndex = null;
+        }
+
+        function applyCrop() {
+            if (currentCropIndex === null) return;
+            pagesData[currentCropIndex].crop = {
+                t: parseInt(document.getElementById('crop-top').value) || 0,
+                b: parseInt(document.getElementById('crop-bottom').value) || 0,
+                l: parseInt(document.getElementById('crop-left').value) || 0,
+                r: parseInt(document.getElementById('crop-right').value) || 0
+            };
+            closeCrop();
+            renderPages();
+        }
+
+        // --- GENERACIÓN DEL PDF (El corazón del script arreglado) ---
+        async function generateFinalPDF() {
+            if (pagesData.length === 0) return null;
+            const mergedPdf = await PDFDocument.create();
+
+            // Caché de documentos para no parsear el mismo PDF varias veces
+            const loadedPdfsCache = {};
+
+            for (const item of pagesData) {
+                const fileInfo = filesDB[item.fileId];
+
+                if (!fileInfo) {
+                    console.error("No se encontró la data del archivo para la página", item);
+                    continue;
+                }
+
+                if (item.isImage) {
+                    let image;
+                    // Usamos una copia de los datos
+                    const imgData = fileInfo.data.slice(0);
+                    if (fileInfo.type === 'image/jpeg') {
+                        image = await mergedPdf.embedJpg(imgData);
+                    } else {
+                        image = await mergedPdf.embedPng(imgData);
+                    }
+
+                    const page = mergedPdf.addPage([image.width, image.height]);
+                    page.drawImage(image, {
+                        x: 0, y: 0,
+                        width: image.width, height: image.height,
+                        rotate: degrees(item.rotation)
+                    });
+
+                    const { t, b, l, r } = item.crop;
+                    if (t || b || l || r) {
+                        page.setCropBox(l, b, image.width - l - r, image.height - t - b);
+                    }
+                } else {
+                    // Cargar el PDF fuente solo si no se ha cargado en esta iteración de exportación
+                    if (!loadedPdfsCache[item.fileId]) {
+                        // Pasar una copia limpia (slice) soluciona el problema de desconexión del buffer
+                        loadedPdfsCache[item.fileId] = await PDFDocument.load(fileInfo.data.slice(0));
+                    }
+
+                    const srcDoc = loadedPdfsCache[item.fileId];
+                    const [copiedPage] = await mergedPdf.copyPages(srcDoc, [item.pageIndex]);
+
+                    // Sumar la rotación original de la página + la rotación dada por el usuario
+                    const currentRotation = copiedPage.getRotation().angle;
+                    copiedPage.setRotation(degrees(currentRotation + item.rotation));
+
+                    const { width, height } = copiedPage.getSize();
+                    const { t, b, l, r } = item.crop;
+                    if (t || b || l || r) {
+                        copiedPage.setCropBox(l, b, width - l - r, height - t - b);
+                    }
+                    mergedPdf.addPage(copiedPage);
+                }
+            }
+            return await mergedPdf.save();
+        }
+
+        // --- PREVISUALIZAR ---
+        async function previewPDF() {
+            if (pagesData.length === 0) return alert("Por favor añade documentos al proyecto primero.");
+            showLoading("Generando visualización nativa...");
+            try {
+                const pdfBytes = await generateFinalPDF();
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                const url = window.URL.createObjectURL(blob);
+
+                document.getElementById('preview-iframe').src = url;
+                document.getElementById('preview-modal').classList.remove('hidden');
+            } catch (err) {
+                console.error("Error crítico en previsualización:", err);
+                alert("Hubo un error al generar la vista previa. Revisa la consola para más detalles.");
+            }
+            hideLoading();
+        }
+
+        function closePreview() {
+            document.getElementById('preview-modal').classList.add('hidden');
+            // Limpiar la url para liberar memoria
+            const iframe = document.getElementById('preview-iframe');
+            if (iframe.src) window.URL.revokeObjectURL(iframe.src);
+            iframe.src = '';
+        }
+
+        // --- IMPRIMIR ---
+        async function printPDF() {
+            if (pagesData.length === 0) return alert("Por favor añade documentos al proyecto primero.");
+            showLoading("Preparando documento para impresión...");
+            try {
+                const pdfBytes = await generateFinalPDF();
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                const url = window.URL.createObjectURL(blob);
+
+                // Abrimos una ventana oculta/ligera y usamos el método de impresión
+                const printWindow = window.open(url, '_blank');
+                if (printWindow) {
+                    printWindow.onload = () => {
+                        printWindow.print();
+                    };
+                } else {
+                    // Fallback si los popups están bloqueados
+                    alert("Tu navegador bloqueó la ventana de impresión. Intenta usando Previsualizar -> Botón de Imprimir interno.");
+                }
+            } catch (err) {
+                console.error("Error en impresión:", err);
+                alert("Ocurrió un error al preparar el documento.");
+            }
+            hideLoading();
+        }
+
+        // --- MODAL DE EXPORTACIÓN ---
+        function openExportModal() {
+            if (pagesData.length === 0) return alert("No hay páginas para exportar.");
+            document.getElementById('export-modal').classList.remove('hidden');
+        }
+
+        function closeExportModal() {
+            document.getElementById('export-modal').classList.add('hidden');
+        }
+
+        // EXPORTAR COMO PDF
+        async function exportAsPDF() {
+            closeExportModal();
+            const defaultName = "SharkPDF_" + new Date().getTime() + ".pdf";
+            const name = prompt("Nombre de tu documento:", defaultName);
+            if (!name) return;
+
+            showLoading("Construyendo PDF final de alta calidad...");
+            try {
+                const pdfBytes = await generateFinalPDF();
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                saveAs(blob, name.endsWith('.pdf') ? name : name + '.pdf');
+            } catch (err) {
+                console.error(err);
+                alert("Error al intentar ensamblar y descargar el PDF.");
+            }
+            hideLoading();
+        }
+
+        // EXPORTAR COMO IMÁGENES ZIP
+        async function exportAsImages() {
+            closeExportModal();
+            showLoading("Extrayendo y renderizando imágenes de alta calidad...");
+            try {
+                const zip = new JSZip();
+
+                for (let i = 0; i < pagesData.length; i++) {
+                    const item = pagesData[i];
+                    const fileInfo = filesDB[item.fileId];
+                    let base64Data;
+
+                    if (item.isImage) {
+                        // Limpia metadata para el ZIP
+                        base64Data = item.previewUrl.replace(/^data:image\/(png|jpeg|webp);base64,/, "");
+                    } else {
+                        // Renderizado nativo de cada página por separado, protegido de consumo de buffer
+                        const loadingTask = pdfjsLib.getDocument({ data: fileInfo.data.slice(0) });
+                        const pdf = await loadingTask.promise;
+                        const page = await pdf.getPage(item.pageIndex + 1);
+
+                        const viewport = page.getViewport({ scale: 2.5, rotation: item.rotation }); // Escala 2.5 para calidad HD
+                        const canvas = document.createElement('canvas');
+                        const context = canvas.getContext('2d');
+                        canvas.height = viewport.height;
+                        canvas.width = viewport.width;
+
+                        await page.render({ canvasContext: context, viewport: viewport }).promise;
+                        base64Data = canvas.toDataURL('image/jpeg', 0.9).replace(/^data:image\/jpeg;base64,/, "");
+                    }
+
+                    const pageNum = String(i + 1).padStart(3, '0');
+                    zip.file(`SharkPDF_Página_${pageNum}.jpg`, base64Data, { base64: true });
+                }
+
+                const content = await zip.generateAsync({ type: "blob" });
+                saveAs(content, "SharkPDF_Imágenes.zip");
+
+            } catch (err) {
+                console.error(err);
+                alert("Ocurrió un error al procesar el archivo ZIP de imágenes.");
+            }
+            hideLoading();
+        }
+    </script>
+</body>
+
+</html>
